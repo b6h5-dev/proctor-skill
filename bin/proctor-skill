@@ -17,6 +17,10 @@ case "${1:-}" in
     shift
     exec bash "$PACKAGE_DIR/uninstall.sh" "$@"
     ;;
+  summary)
+    shift
+    exec python3 "$PACKAGE_DIR/bin/proctor-summary.py" "$@"
+    ;;
   verify)
     shift
     TARGET="${1:-.}"

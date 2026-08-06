@@ -20,26 +20,26 @@ ownership, not gatekeeping. Be encouraging, not adversarial.
 
 ## Summary mode
 
-If `$ARGUMENTS` contains "summary" or "stats", skip the quiz and show the
-user's quiz history instead.
+If `$ARGUMENTS` contains "summary" or "stats", skip the quiz and generate
+the summary using the built-in Python script. This avoids consuming tokens
+for data analysis.
 
-1. Read `~/.proctor/history.jsonl`. If the file doesn't exist or is empty,
-   tell the user there's no quiz history yet.
-2. Parse each line as JSON. By default, show stats across all repos.
-3. If the arguments mention a specific repo name (e.g., "summary for
-   my-project"), filter entries whose `repo` path ends with that name.
-   If they mention a specific branch (e.g., "summary for feature/auth"),
-   filter to that branch. Both filters can be combined.
-4. Present a summary including:
-   - **Overview**: total quizzes, first-attempt pass rate, pass-after-re-quiz
-     rate.
-   - **Per-category breakdown**: pass rates for What, Why, and Risk questions.
-   - **Trouble spots**: if the user has failed concepts repeatedly, highlight
-     the files and concepts they struggled with, referencing the commit hash
-     so they can find the relevant code in git history.
-   - **Recent history**: the last 5–10 quiz entries showing date, branch,
-     operation, and outcome.
-5. End with encouragement — highlight improvement trends if visible.
+1. Build the command from the arguments:
+   - Default: `python3 bin/proctor-summary.py` (or find the script relative
+     to the skill's location)
+   - If arguments mention a repo name: add `--repo <name>`
+   - If arguments mention a branch: add `--branch <name>`
+2. Run the script. It outputs a text summary to stdout and writes an HTML
+   report to `~/.proctor/summary.html`.
+3. Show the text output to the user.
+4. Open the HTML report automatically:
+   - macOS: `open ~/.proctor/summary.html`
+   - Linux: `xdg-open ~/.proctor/summary.html`
+   - Windows: `start ~/.proctor/summary.html`
+
+If the script is not found (e.g., installed via `npx skills add` without
+the full package), fall back to telling the user to run:
+`npx proctor-skill summary [--repo NAME] [--branch NAME]`
 
 After showing the summary, stop. Do not run a quiz.
 
