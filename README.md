@@ -62,7 +62,7 @@ The `/proctor summary` skill command also runs the Python script directly — no
 ### skills.sh
 
 ```bash
-npx skills add brandon-haugen/proctor-skill
+npx skills add b6h5-dev/proctor-skill
 ```
 
 This installs the `/proctor` skill but not the hook that automatically blocks push/merge. To add the hook, also run:
@@ -101,7 +101,7 @@ npx proctor-skill uninstall --copilot /path/to/your-project
 ### From source
 
 ```bash
-git clone https://github.com/brandon-haugen/proctor-skill.git
+git clone https://github.com/b6h5-dev/proctor-skill.git
 cd proctor-skill
 
 # Claude Code
