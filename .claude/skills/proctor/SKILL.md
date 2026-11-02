@@ -45,7 +45,15 @@ After showing the summary, stop. Do not run a quiz.
 
 ## Step 1: Determine the diff
 
-Based on `$ARGUMENTS` or the current git state, figure out what to quiz on:
+Based on `$ARGUMENTS` or the current git state, figure out what to quiz on.
+
+**First, fetch the target branch** so the merge-base is current:
+
+```bash
+git fetch origin develop 2>/dev/null || git fetch origin main 2>/dev/null || git fetch origin master 2>/dev/null || true
+```
+
+Then compute the diff:
 
 - **Push**: run `git log --oneline $(git merge-base HEAD develop)..HEAD` and
   `git diff $(git merge-base HEAD develop)..HEAD` to see all branch changes.
@@ -59,8 +67,11 @@ Based on `$ARGUMENTS` or the current git state, figure out what to quiz on:
   merge-base approach like a push.
 - Always also run the `--stat` variant for an overview of files changed.
 
-If the diff is empty, tell the user there's nothing to quiz on and write the
-marker file so the operation can proceed.
+**Verify the diff is current** before generating questions. If the diff is
+empty — or if the merge-base equals HEAD (meaning the branch's changes have
+already been merged) — tell the user there's nothing to quiz on and write
+the marker file so the operation can proceed. Do not generate questions
+from a stale or empty diff.
 
 ## Step 2: Generate questions
 
