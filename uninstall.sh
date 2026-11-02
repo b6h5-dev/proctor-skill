@@ -82,8 +82,8 @@ if [ "$COPILOT" = false ]; then
   if [ -f "$SETTINGS_FILE" ]; then
     python3 -c "
 import json
-with open('$SETTINGS_FILE') as f:
-    data = json.load(f)
+from pathlib import Path
+data = json.loads(Path('$SETTINGS_FILE').read_text())
 pre = data.get('hooks', {}).get('PreToolUse', [])
 data['hooks']['PreToolUse'] = [
     h for h in pre
@@ -94,19 +94,16 @@ if not data['hooks']['PreToolUse']:
 if not data.get('hooks'):
     del data['hooks']
 if data:
-    with open('$SETTINGS_FILE', 'w') as f:
-        json.dump(data, f, indent=2)
-        f.write('\n')
+    Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
     print('  Removed hook from settings.json')
 else:
-    import os
-    os.remove('$SETTINGS_FILE')
+    Path('$SETTINGS_FILE').unlink()
     print('  Removed empty settings.json')
 "
   fi
 fi
 
-rm -rf /tmp/proctor 2>/dev/null && echo "  Cleaned up marker files" || true
+rm -r /tmp/proctor 2>/dev/null && echo "  Cleaned up marker files" || true
 
 echo ""
 echo "Done! Proctor has been removed."

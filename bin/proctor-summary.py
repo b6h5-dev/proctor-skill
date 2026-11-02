@@ -23,20 +23,19 @@ def load_entries(repo_filter=None, branch_filter=None):
     if not HISTORY_FILE.exists():
         return []
     entries = []
-    with open(HISTORY_FILE) as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if repo_filter and not entry.get("repo", "").endswith("/" + repo_filter):
-                continue
-            if branch_filter and entry.get("branch") != branch_filter:
-                continue
-            entries.append(entry)
+    for line in HISTORY_FILE.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if repo_filter and not entry.get("repo", "").endswith("/" + repo_filter):
+            continue
+        if branch_filter and entry.get("branch") != branch_filter:
+            continue
+        entries.append(entry)
     return entries
 
 
@@ -358,8 +357,7 @@ def main():
         html_path = str(html_dir / "summary.html")
 
     html = generate_html(stats, repo_filter=args.repo, branch_filter=args.branch)
-    with open(html_path, "w") as f:
-        f.write(html)
+    Path(html_path).write_text(html)
     print(f"HTML report: {html_path}")
 
 

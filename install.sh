@@ -114,8 +114,8 @@ HOOKJSON
   if [ -f "$SETTINGS_FILE" ]; then
     HAS_HOOKS=$(python3 -c "
 import json, sys
-with open('$SETTINGS_FILE') as f:
-    data = json.load(f)
+from pathlib import Path
+data = json.loads(Path('$SETTINGS_FILE').read_text())
 hooks = data.get('hooks', {}).get('PreToolUse', [])
 for h in hooks:
     if any('proctor' in hk.get('command', '') for hk in h.get('hooks', [])):
@@ -128,13 +128,11 @@ print('no')
     else
       python3 -c "
 import json
-with open('$SETTINGS_FILE') as f:
-    data = json.load(f)
+from pathlib import Path
+data = json.loads(Path('$SETTINGS_FILE').read_text())
 hook = json.loads('''$HOOK_ENTRY''')
 data.setdefault('hooks', {}).setdefault('PreToolUse', []).append(hook)
-with open('$SETTINGS_FILE', 'w') as f:
-    json.dump(data, f, indent=2)
-    f.write('\n')
+Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
 "
       echo "  Added hook to existing settings.json"
     fi
