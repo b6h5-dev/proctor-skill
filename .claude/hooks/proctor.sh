@@ -62,8 +62,18 @@ MODE="${PROCTOR_MODE:-blocking}"
 PROTECTED="${PROCTOR_PROTECTED_BRANCHES:-main,master,develop,release/*}"
 COMMIT_INTERVAL="${PROCTOR_COMMIT_INTERVAL:-0}"
 CHANGE_THRESHOLD="${PROCTOR_CHANGE_THRESHOLD:-0}"
-MARKER_DIR="/tmp/proctor"
+MARKER_DIR="${PROCTOR_MARKER_DIR:-$HOME/.proctor/markers}"
 mkdir -p "$MARKER_DIR"
+
+# Migrate markers from legacy /tmp/proctor/ to the new location
+if [ -d "/tmp/proctor" ] && [ "$MARKER_DIR" != "/tmp/proctor" ]; then
+  for legacy in /tmp/proctor/*; do
+    [ -f "$legacy" ] || continue
+    dest="$MARKER_DIR/$(basename "$legacy")"
+    [ -f "$dest" ] || mv "$legacy" "$dest" 2>/dev/null || true
+  done
+  rmdir /tmp/proctor 2>/dev/null || true
+fi
 
 is_protected() {
   local branch="$1"
@@ -117,6 +127,25 @@ marker_matches_head() {
   return 1
 }
 
+# Check ALL markers (any branch) for a matching diff hash. This lets a quiz
+# pass on feature/foo carry over to release/2.0.0 when the content is identical.
+any_marker_matches_diff() {
+  local current_diff
+  current_diff=$(compute_diff_hash)
+  if [ -z "$current_diff" ]; then
+    return 1
+  fi
+  for marker in "$MARKER_DIR"/*; do
+    [ -f "$marker" ] || continue
+    local stored_diff
+    stored_diff=$(sed -n '2p' "$marker")
+    if [ -n "$stored_diff" ] && [ "$stored_diff" = "$current_diff" ]; then
+      return 0
+    fi
+  done
+  return 1
+}
+
 block_or_advise() {
   local message="$1"
   if [ "$MODE" = "advisory" ]; then
@@ -125,6 +154,27 @@ block_or_advise() {
   fi
   echo "$message" >&2
   exit 2
+}
+
+# If the diff for this branch is empty (branch tip == merge-base), write the
+# marker and exit. This avoids invoking the skill for a no-op push/merge.
+auto_pass_if_empty_diff() {
+  local marker="$1"
+  local base head
+  base=$(git merge-base HEAD develop 2>/dev/null || git merge-base HEAD main 2>/dev/null || git merge-base HEAD master 2>/dev/null || echo "")
+  head=$(git rev-parse HEAD 2>/dev/null || echo "")
+  if [ -n "$base" ] && [ "$base" = "$head" ]; then
+    printf '%s\n\n' "$head" > "$marker"
+    exit 0
+  fi
+  local diff_stat
+  diff_stat=$(git diff --shortstat "$base" HEAD 2>/dev/null || echo "")
+  if [ -n "$base" ] && [ -z "$diff_stat" ]; then
+    local diff_hash
+    diff_hash=$(compute_diff_hash)
+    printf '%s\n%s\n' "$head" "$diff_hash" > "$marker"
+    exit 0
+  fi
 }
 
 # Sanitize branch names for use in file paths (replace / with --)
@@ -196,6 +246,11 @@ lines_since_checkpoint() {
 # (e.g., "git -C /path push", "git --no-pager push")
 GIT_PREFIX='(^|\s|&&|\|\||;)git\s+(-[A-Za-z]+\s+\S+\s+)*'
 
+# --- git fetch never changes the working tree — always allow ---
+if printf '%s' "$COMMAND" | grep -qE "${GIT_PREFIX}fetch(\s|$)"; then
+  exit 0
+fi
+
 # --- Detect git push ---
 if printf '%s' "$COMMAND" | grep -qE "${GIT_PREFIX}push(\s|$)"; then
   # Skip tag-only pushes — tags are pointers to existing commits, not new changes
@@ -218,6 +273,11 @@ if printf '%s' "$COMMAND" | grep -qE "${GIT_PREFIX}push(\s|$)"; then
   if marker_matches_head "$MARKER"; then
     exit 0
   fi
+  auto_pass_if_empty_diff "$MARKER"
+  if any_marker_matches_diff; then
+    printf '%s\n%s\n' "$(git rev-parse HEAD)" "$(compute_diff_hash)" > "$MARKER"
+    exit 0
+  fi
   block_or_advise "BLOCKED: You MUST invoke the /proctor skill now. Do NOT suggest the user push manually, do NOT skip this, do NOT offer workarounds. The /proctor skill handles trivial diffs automatically — always run it. Context: push from branch '${CURRENT_BRANCH}'."
 fi
 
@@ -232,6 +292,11 @@ if printf '%s' "$COMMAND" | grep -qE "${GIT_PREFIX}merge(\s|$)"; then
     if marker_matches_head "$MARKER"; then
       exit 0
     fi
+    auto_pass_if_empty_diff "$MARKER"
+    if any_marker_matches_diff; then
+      printf '%s\n%s\n' "$(git rev-parse HEAD)" "$(compute_diff_hash)" > "$MARKER"
+      exit 0
+    fi
     block_or_advise "BLOCKED: You MUST invoke the /proctor skill now. Do NOT suggest the user merge manually, do NOT skip this, do NOT offer workarounds. The /proctor skill handles trivial diffs automatically — always run it. Context: merge '${INCOMING}' into protected branch '${EFFECTIVE_BRANCH}'."
   fi
 fi
@@ -239,6 +304,53 @@ fi
 # --- Detect git pull on a protected branch (pull = fetch + merge) ---
 if printf '%s' "$COMMAND" | grep -qE "${GIT_PREFIX}pull(\s|$)"; then
   if [ -n "$CURRENT_BRANCH" ] && is_protected "$CURRENT_BRANCH"; then
+    # Parse remote and branch from pull args (skip flags)
+    PULL_ARGS=$(printf '%s' "$COMMAND" | sed -E 's/.*pull\s*//')
+    PULL_REMOTE=""
+    PULL_BRANCH=""
+    for arg in $PULL_ARGS; do
+      case "$arg" in
+        -*) continue ;;
+        *)
+          if [ -z "$PULL_REMOTE" ]; then
+            PULL_REMOTE="$arg"
+          elif [ -z "$PULL_BRANCH" ]; then
+            PULL_BRANCH="$arg"
+          fi
+          ;;
+      esac
+    done
+
+    # Same-branch pull = no branch arg, or branch matches current branch
+    IS_SAME_BRANCH=false
+    if [ -z "$PULL_BRANCH" ]; then
+      IS_SAME_BRANCH=true
+    elif [ "$PULL_BRANCH" = "$CURRENT_BRANCH" ]; then
+      IS_SAME_BRANCH=true
+    fi
+
+    if [ "$IS_SAME_BRANCH" = true ]; then
+      REMOTE="${PULL_REMOTE:-origin}"
+      git fetch "$REMOTE" "$CURRENT_BRANCH" 2>/dev/null || true
+      REMOTE_REF="$REMOTE/$CURRENT_BRANCH"
+
+      # If already up to date, nothing to quiz on
+      INCOMING_COUNT=$(git rev-list --count HEAD.."$REMOTE_REF" 2>/dev/null || echo 0)
+      if [ "$INCOMING_COUNT" -eq 0 ]; then
+        exit 0
+      fi
+
+      # If no incoming commits are authored by the current user, this is
+      # just updating from upstream — safe to skip the quiz
+      USER_EMAIL=$(git config user.email 2>/dev/null || echo "")
+      if [ -n "$USER_EMAIL" ]; then
+        USER_COMMITS=$(git log HEAD.."$REMOTE_REF" --format='%ae' 2>/dev/null | grep -cF "$USER_EMAIL" || echo 0)
+        if [ "$USER_COMMITS" -eq 0 ]; then
+          exit 0
+        fi
+      fi
+    fi
+
     MARKER="$MARKER_DIR/pull-on-${SAFE_BRANCH}"
     if marker_matches_head "$MARKER"; then
       exit 0

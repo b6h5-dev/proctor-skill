@@ -56,10 +56,12 @@ else
   echo "Uninstalling proctor from $TARGET_DIR"
 fi
 
-if [ -f "$TARGET_DIR/hooks/proctor.sh" ]; then
-  rm "$TARGET_DIR/hooks/proctor.sh"
-  echo "  Removed hooks/proctor.sh"
-fi
+for f in proctor.sh proctor-write-marker.sh proctor-log.sh; do
+  if [ -f "$TARGET_DIR/hooks/$f" ]; then
+    rm "$TARGET_DIR/hooks/$f"
+    echo "  Removed hooks/$f"
+  fi
+done
 
 if [ "$COPILOT" = true ]; then
   if [ -f "$TARGET_DIR/hooks/proctor.json" ]; then
@@ -93,9 +95,18 @@ if not data['hooks']['PreToolUse']:
     del data['hooks']['PreToolUse']
 if not data.get('hooks'):
     del data['hooks']
+# Remove proctor permission rules
+allow = data.get('permissions', {}).get('allow', [])
+data.setdefault('permissions', {})['allow'] = [
+    p for p in allow if 'proctor' not in p
+]
+if not data['permissions']['allow']:
+    del data['permissions']['allow']
+if not data.get('permissions'):
+    del data['permissions']
 if data:
     Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
-    print('  Removed hook from settings.json')
+    print('  Removed hook and permissions from settings.json')
 else:
     Path('$SETTINGS_FILE').unlink()
     print('  Removed empty settings.json')
@@ -103,7 +114,9 @@ else:
   fi
 fi
 
-rm -r /tmp/proctor 2>/dev/null && echo "  Cleaned up marker files" || true
+# Clean up markers from both legacy and new locations
+rm -r /tmp/proctor 2>/dev/null && echo "  Cleaned up legacy marker files (/tmp/proctor)" || true
+rm -r "$HOME/.proctor/markers" 2>/dev/null && echo "  Cleaned up marker files (~/.proctor/markers)" || true
 
 echo ""
 echo "Done! Proctor has been removed."

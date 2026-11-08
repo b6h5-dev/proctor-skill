@@ -69,6 +69,11 @@ cp "$SCRIPT_DIR/.claude/hooks/proctor.sh" "$TARGET_DIR/hooks/proctor.sh"
 chmod +x "$TARGET_DIR/hooks/proctor.sh"
 echo "  Copied hooks/proctor.sh"
 
+cp "$SCRIPT_DIR/bin/proctor-write-marker.sh" "$TARGET_DIR/hooks/proctor-write-marker.sh"
+cp "$SCRIPT_DIR/bin/proctor-log.sh" "$TARGET_DIR/hooks/proctor-log.sh"
+chmod +x "$TARGET_DIR/hooks/proctor-write-marker.sh" "$TARGET_DIR/hooks/proctor-log.sh"
+echo "  Copied proctor-write-marker.sh and proctor-log.sh"
+
 cp "$SCRIPT_DIR/.claude/skills/proctor/SKILL.md" "$TARGET_DIR/skills/proctor/SKILL.md"
 echo "  Copied skills/proctor/SKILL.md"
 
@@ -111,6 +116,9 @@ else
 HOOKJSON
   )
 
+  # Permission rules so classifiers allow the proctor helper scripts
+  PROCTOR_PERMISSIONS='["Bash(proctor-write-marker.sh *)", "Bash(proctor-log.sh *)"]'
+
   if [ -f "$SETTINGS_FILE" ]; then
     HAS_HOOKS=$(python3 -c "
 import json, sys
@@ -132,13 +140,40 @@ from pathlib import Path
 data = json.loads(Path('$SETTINGS_FILE').read_text())
 hook = json.loads('''$HOOK_ENTRY''')
 data.setdefault('hooks', {}).setdefault('PreToolUse', []).append(hook)
+perms = json.loads('$PROCTOR_PERMISSIONS')
+allow = data.setdefault('permissions', {}).setdefault('allow', [])
+for p in perms:
+    if p not in allow:
+        allow.append(p)
 Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
 "
       echo "  Added hook to existing settings.json"
     fi
+    # Ensure permissions exist even if hook was already configured
+    python3 -c "
+import json
+from pathlib import Path
+data = json.loads(Path('$SETTINGS_FILE').read_text())
+perms = json.loads('$PROCTOR_PERMISSIONS')
+allow = data.setdefault('permissions', {}).setdefault('allow', [])
+changed = False
+for p in perms:
+    if p not in allow:
+        allow.append(p)
+        changed = True
+if changed:
+    Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
+    print('  Added proctor permissions to settings.json')
+"
   else
     cat > "$SETTINGS_FILE" <<SETTINGSJSON
 {
+  "permissions": {
+    "allow": [
+      "Bash(proctor-write-marker.sh *)",
+      "Bash(proctor-log.sh *)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       $HOOK_ENTRY
@@ -146,7 +181,7 @@ Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
   }
 }
 SETTINGSJSON
-    echo "  Created settings.json with hook"
+    echo "  Created settings.json with hook and permissions"
   fi
 fi
 
