@@ -117,20 +117,20 @@ HOOKJSON
   )
 
   # Permission rules so classifiers allow the proctor helper scripts.
-  # Must match the paths the SKILL.md tells the AI to use.
-  if [ "$GLOBAL" = true ]; then
-    HOOKS_PREFIX="$HOME/.claude/hooks"
-  else
-    HOOKS_PREFIX=".claude/hooks"
-  fi
+  # Include all possible invocation paths: bare name, project-relative,
+  # global absolute, and home-relative (~). The AI may use any of these.
   PROCTOR_PERMISSIONS=$(python3 -c "
-import json
-prefix = '$HOOKS_PREFIX'
+import json, os
+home = os.path.expanduser('~')
 rules = [
-    f'Bash({prefix}/proctor-write-marker.sh *)',
-    f'Bash({prefix}/proctor-log.sh *)',
     'Bash(proctor-write-marker.sh *)',
     'Bash(proctor-log.sh *)',
+    'Bash(.claude/hooks/proctor-write-marker.sh *)',
+    'Bash(.claude/hooks/proctor-log.sh *)',
+    f'Bash({home}/.claude/hooks/proctor-write-marker.sh *)',
+    f'Bash({home}/.claude/hooks/proctor-log.sh *)',
+    'Bash(~/.claude/hooks/proctor-write-marker.sh *)',
+    'Bash(~/.claude/hooks/proctor-log.sh *)',
 ]
 print(json.dumps(rules))
 ")

@@ -73,9 +73,16 @@ git fetch origin develop 2>/dev/null || git fetch origin main 2>/dev/null || git
 
 Then compute the diff:
 
-- **Push**: run `git log --oneline $(git merge-base HEAD develop)..HEAD` and
-  `git diff $(git merge-base HEAD develop)..HEAD` to see all branch changes.
-  If the merge-base fails (e.g., no `develop`), fall back to `git diff HEAD~5..HEAD`.
+- **Push**: first check for a checkpoint from a previous quiz on this branch:
+  read `~/.proctor/markers/checkpoint-{safe_branch}` (line 1 is the commit
+  hash). If it exists and `git cat-file -t {checkpoint}` succeeds, diff from
+  that point: `git diff {checkpoint}..HEAD`. This ensures repeat pushes only
+  quiz on new changes, not the entire branch again.
+  If no checkpoint exists, fall back to the merge-base:
+  `git log --oneline $(git merge-base HEAD develop)..HEAD` and
+  `git diff $(git merge-base HEAD develop)..HEAD`.
+  If the merge-base also fails (e.g., no `develop`), fall back to
+  `git diff HEAD~5..HEAD`.
 - **Merge into protected branch**: the blocked message includes the incoming
   branch name. Run `git diff HEAD...{incoming-branch}` to see what's coming in.
 - **Periodic checkpoint**: the blocked message includes "periodic checkpoint".
@@ -193,12 +200,18 @@ For **trivial skips** (one-line typo fixes that don't need a quiz), log with
 ```bash
 # For a push (sanitize branch name — replace / with --):
 proctor-write-marker.sh "push-{safe_branch}"
+proctor-write-marker.sh "checkpoint-{safe_branch}"
 # For a merge:
 proctor-write-marker.sh "merge-{safe_incoming}-into-{safe_target}"
-# For a periodic checkpoint (write both marker and checkpoint):
+proctor-write-marker.sh "checkpoint-{safe_branch}"
+# For a periodic checkpoint:
 proctor-write-marker.sh "periodic-{safe_branch}"
 proctor-write-marker.sh "checkpoint-{safe_branch}"
 ```
+
+**Always write a checkpoint alongside the operation marker.** This ensures
+the next quiz on the same branch only covers changes made after this point,
+rather than re-quizzing the entire branch from merge-base.
 
 If `proctor-write-marker.sh` is not on `$PATH`, find it relative to the
 hook or skill location, or at the package's `bin/` directory.
@@ -251,10 +264,11 @@ next quiz only covers new changes from this point forward.
   ```bash
   proctor-log.sh '{"timestamp":"YYYY-MM-DDTHH:MM:SSZ","repo":"...","branch":"...","operation":"{OPERATION}","attempt":1,"questions":0,"passed":0,"failed":0,"categories":{},"commit":"...","files":[],"failed_concepts":[],"trivial_skip":true}'
   proctor-write-marker.sh "{MARKER_NAME}"
+  proctor-write-marker.sh "checkpoint-{SAFE_BRANCH}"
   ```
 
   Fill in the actual values for timestamp, repo, branch, commit, and
-  replace `{OPERATION}` and `{MARKER_NAME}` with the appropriate values
-  (e.g., `push` and `push-main`).
+  replace `{OPERATION}`, `{MARKER_NAME}`, and `{SAFE_BRANCH}` with the
+  appropriate values (e.g., `push`, `push-main`, and `main`).
 
   Then retry the original git operation immediately.
