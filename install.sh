@@ -116,8 +116,24 @@ else
 HOOKJSON
   )
 
-  # Permission rules so classifiers allow the proctor helper scripts
-  PROCTOR_PERMISSIONS='["Bash(proctor-write-marker.sh *)", "Bash(proctor-log.sh *)"]'
+  # Permission rules so classifiers allow the proctor helper scripts.
+  # Must match the paths the SKILL.md tells the AI to use.
+  if [ "$GLOBAL" = true ]; then
+    HOOKS_PREFIX="$HOME/.claude/hooks"
+  else
+    HOOKS_PREFIX=".claude/hooks"
+  fi
+  PROCTOR_PERMISSIONS=$(python3 -c "
+import json
+prefix = '$HOOKS_PREFIX'
+rules = [
+    f'Bash({prefix}/proctor-write-marker.sh *)',
+    f'Bash({prefix}/proctor-log.sh *)',
+    'Bash(proctor-write-marker.sh *)',
+    'Bash(proctor-log.sh *)',
+]
+print(json.dumps(rules))
+")
 
   if [ -f "$SETTINGS_FILE" ]; then
     HAS_HOOKS=$(python3 -c "
@@ -166,21 +182,17 @@ if changed:
     print('  Added proctor permissions to settings.json')
 "
   else
-    cat > "$SETTINGS_FILE" <<SETTINGSJSON
-{
-  "permissions": {
-    "allow": [
-      "Bash(proctor-write-marker.sh *)",
-      "Bash(proctor-log.sh *)"
-    ]
-  },
-  "hooks": {
-    "PreToolUse": [
-      $HOOK_ENTRY
-    ]
-  }
+    python3 -c "
+import json
+from pathlib import Path
+hook = json.loads('''$HOOK_ENTRY''')
+perms = json.loads('$PROCTOR_PERMISSIONS')
+data = {
+    'permissions': {'allow': perms},
+    'hooks': {'PreToolUse': [hook]}
 }
-SETTINGSJSON
+Path('$SETTINGS_FILE').write_text(json.dumps(data, indent=2) + '\n')
+"
     echo "  Created settings.json with hook and permissions"
   fi
 fi
