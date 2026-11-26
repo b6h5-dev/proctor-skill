@@ -62,11 +62,21 @@ MODE="${PROCTOR_MODE:-blocking}"
 PROTECTED="${PROCTOR_PROTECTED_BRANCHES:-main,master,develop,release/*}"
 COMMIT_INTERVAL="${PROCTOR_COMMIT_INTERVAL:-0}"
 CHANGE_THRESHOLD="${PROCTOR_CHANGE_THRESHOLD:-0}"
-MARKER_DIR="${PROCTOR_MARKER_DIR:-$HOME/.proctor/markers}"
+MARKER_BASE="${PROCTOR_MARKER_DIR:-$HOME/.proctor/markers}"
+REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null || echo "unknown")
+REPO_ID=$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-12)
+MARKER_DIR="$MARKER_BASE/$REPO_ID"
 mkdir -p "$MARKER_DIR"
 
-# Migrate markers from legacy /tmp/proctor/ to the new location
-if [ -d "/tmp/proctor" ] && [ "$MARKER_DIR" != "/tmp/proctor" ]; then
+# Migrate markers from legacy flat directory (no repo scoping)
+for legacy in "$MARKER_BASE"/push-* "$MARKER_BASE"/merge-* "$MARKER_BASE"/periodic-* "$MARKER_BASE"/checkpoint-* "$MARKER_BASE"/pull-on-*; do
+  [ -f "$legacy" ] || continue
+  dest="$MARKER_DIR/$(basename "$legacy")"
+  [ -f "$dest" ] || mv "$legacy" "$dest" 2>/dev/null || true
+done
+
+# Migrate markers from legacy /tmp/proctor/
+if [ -d "/tmp/proctor" ]; then
   for legacy in /tmp/proctor/*; do
     [ -f "$legacy" ] || continue
     dest="$MARKER_DIR/$(basename "$legacy")"

@@ -24,15 +24,26 @@ Proctor uses two helper scripts for writing markers and logging quiz
 results. Using dedicated scripts (instead of inline file writes) prevents
 auto-mode classifiers from blocking the writes as "security bypass attempts."
 
-- **`proctor-write-marker.sh <marker-name>`** — writes a quiz-pass marker
+- **`proctor-write-marker.sh <marker-name> [repo-path]`** — writes a quiz-pass marker
 - **`proctor-log.sh '<json>'`** — appends a quiz result to `~/.proctor/history.jsonl`
 
-These scripts are installed alongside the hook in the `hooks/` directory
-(e.g., `.claude/hooks/proctor-write-marker.sh`). To call them, use one of:
+Markers are scoped per-repo (using a hash of the repo root), so markers
+from different repositories never collide.
 
-1. Direct path: `.claude/hooks/proctor-write-marker.sh "push-main"`
-2. Global install: `~/.claude/hooks/proctor-write-marker.sh "push-main"`
-3. Copilot install: `.github/hooks/proctor-write-marker.sh "push-main"`
+**Always pass the repo path** as the second argument to
+`proctor-write-marker.sh` to ensure git commands resolve against the
+correct repository, especially in sessions that work across multiple repos:
+
+```bash
+.claude/hooks/proctor-write-marker.sh "push-main" "/path/to/repo"
+```
+
+These scripts are installed alongside the hook in the `hooks/` directory.
+To call them, use one of:
+
+1. Direct path: `.claude/hooks/proctor-write-marker.sh "push-main" "$(git rev-parse --show-toplevel)"`
+2. Global install: `~/.claude/hooks/proctor-write-marker.sh "push-main" "$(git rev-parse --show-toplevel)"`
+3. Copilot install: `.github/hooks/proctor-write-marker.sh "push-main" "$(git rev-parse --show-toplevel)"`
 
 Check which path exists and use that one.
 
@@ -198,20 +209,22 @@ For **trivial skips** (one-line typo fixes that don't need a quiz), log with
    direct file writes to marker paths:
 
 ```bash
+REPO="$(git rev-parse --show-toplevel)"
 # For a push (sanitize branch name — replace / with --):
-proctor-write-marker.sh "push-{safe_branch}"
-proctor-write-marker.sh "checkpoint-{safe_branch}"
+proctor-write-marker.sh "push-{safe_branch}" "$REPO"
+proctor-write-marker.sh "checkpoint-{safe_branch}" "$REPO"
 # For a merge:
-proctor-write-marker.sh "merge-{safe_incoming}-into-{safe_target}"
-proctor-write-marker.sh "checkpoint-{safe_branch}"
+proctor-write-marker.sh "merge-{safe_incoming}-into-{safe_target}" "$REPO"
+proctor-write-marker.sh "checkpoint-{safe_branch}" "$REPO"
 # For a periodic checkpoint:
-proctor-write-marker.sh "periodic-{safe_branch}"
-proctor-write-marker.sh "checkpoint-{safe_branch}"
+proctor-write-marker.sh "periodic-{safe_branch}" "$REPO"
+proctor-write-marker.sh "checkpoint-{safe_branch}" "$REPO"
 ```
 
-**Always write a checkpoint alongside the operation marker.** This ensures
-the next quiz on the same branch only covers changes made after this point,
-rather than re-quizzing the entire branch from merge-base.
+**Always pass the repo path** and **always write a checkpoint alongside the
+operation marker.** The repo path ensures git commands run against the
+correct repository. The checkpoint ensures the next quiz only covers
+changes made after this point.
 
 If `proctor-write-marker.sh` is not on `$PATH`, find it relative to the
 hook or skill location, or at the package's `bin/` directory.
@@ -262,9 +275,10 @@ next quiz only covers new changes from this point forward.
   Use good judgment on what counts as trivial.
 
   ```bash
+  REPO="$(git rev-parse --show-toplevel)"
   proctor-log.sh '{"timestamp":"YYYY-MM-DDTHH:MM:SSZ","repo":"...","branch":"...","operation":"{OPERATION}","attempt":1,"questions":0,"passed":0,"failed":0,"categories":{},"commit":"...","files":[],"failed_concepts":[],"trivial_skip":true}'
-  proctor-write-marker.sh "{MARKER_NAME}"
-  proctor-write-marker.sh "checkpoint-{SAFE_BRANCH}"
+  proctor-write-marker.sh "{MARKER_NAME}" "$REPO"
+  proctor-write-marker.sh "checkpoint-{SAFE_BRANCH}" "$REPO"
   ```
 
   Fill in the actual values for timestamp, repo, branch, commit, and
