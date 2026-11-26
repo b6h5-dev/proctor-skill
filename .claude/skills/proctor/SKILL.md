@@ -82,12 +82,21 @@ Based on `$ARGUMENTS` or the current git state, figure out what to quiz on.
 git fetch origin develop 2>/dev/null || git fetch origin main 2>/dev/null || git fetch origin master 2>/dev/null || true
 ```
 
+Markers are stored in a per-repo subdirectory. To find the marker directory
+for the current repo:
+
+```bash
+REPO_ROOT=$(git rev-parse --show-toplevel)
+REPO_ID=$(printf '%s' "$REPO_ROOT" | shasum -a 256 | cut -c1-12)
+MARKER_DIR="$HOME/.proctor/markers/$REPO_ID"
+```
+
 Then compute the diff:
 
 - **Push**: first check for a checkpoint from a previous quiz on this branch:
-  read `~/.proctor/markers/checkpoint-{safe_branch}` (line 1 is the commit
-  hash). If it exists and `git cat-file -t {checkpoint}` succeeds, diff from
-  that point: `git diff {checkpoint}..HEAD`. This ensures repeat pushes only
+  read `$MARKER_DIR/checkpoint-{safe_branch}` (line 1 is the commit hash).
+  If it exists and `git cat-file -t {checkpoint}` succeeds, diff from that
+  point: `git diff {checkpoint}..HEAD`. This ensures repeat pushes only
   quiz on new changes, not the entire branch again.
   If no checkpoint exists, fall back to the merge-base:
   `git log --oneline $(git merge-base HEAD develop)..HEAD` and
@@ -97,10 +106,9 @@ Then compute the diff:
 - **Merge into protected branch**: the blocked message includes the incoming
   branch name. Run `git diff HEAD...{incoming-branch}` to see what's coming in.
 - **Periodic checkpoint**: the blocked message includes "periodic checkpoint".
-  Read the checkpoint file at `~/.proctor/markers/checkpoint-{branch}` to
-  get the commit hash of the last quiz. Diff from that point:
-  `git diff {checkpoint}..HEAD`. If no checkpoint exists, fall back to the
-  merge-base approach like a push.
+  Read `$MARKER_DIR/checkpoint-{safe_branch}` to get the commit hash of the
+  last quiz. Diff from that point: `git diff {checkpoint}..HEAD`. If no
+  checkpoint exists, fall back to the merge-base approach like a push.
 - Always also run the `--stat` variant for an overview of files changed.
 
 **Verify the diff is current** before generating questions. If the diff is
